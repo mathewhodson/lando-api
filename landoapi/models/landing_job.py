@@ -238,9 +238,11 @@ class LandingJob(Base):
 
         if action in (LandingJobAction.FAIL, LandingJobAction.DEFER):
             self.error = kwargs["message"]
+            self.fail_revisions()
 
         if action == LandingJobAction.LAND:
             self.landed_commit_id = kwargs["commit_id"]
+            self.land_revisions()
 
         if commit:
             db.session.commit()

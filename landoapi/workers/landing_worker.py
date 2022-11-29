@@ -26,7 +26,7 @@ from landoapi.notifications import (
     notify_user_of_bug_update_failure,
     notify_user_of_landing_failure,
 )
-from landoapi.models.revisions import Revision, RevisionStatus
+from landoapi.models.revisions import RevisionStatus
 from landoapi.repos import (
     Repo,
     repo_clone_subsystem,
@@ -314,8 +314,6 @@ class LandingWorker(Worker):
                         LandingJobAction.FAIL, message=message, commit=True, db=db
                     )
                     self.notify_user_of_landing_failure(job)
-                    job.fail_revisions()
-                    db.session.commit()
                     return True
                 except NoDiffStartLine as e:
                     message = (
@@ -330,8 +328,6 @@ class LandingWorker(Worker):
                         commit=True,
                         db=db,
                     )
-                    job.fail_revisions()
-                    db.session.commit()
                     self.notify_user_of_landing_failure(job)
                     return True
                 except Exception as e:
@@ -346,8 +342,6 @@ class LandingWorker(Worker):
                         commit=True,
                         db=db,
                     )
-                    job.fail_revisions()
-                    db.session.commit()
                     self.notify_user_of_landing_failure(job)
                     return True
                 revision.status = RevisionStatus.LANDING
@@ -375,8 +369,6 @@ class LandingWorker(Worker):
                         LandingJobAction.FAIL, message=message, commit=True, db=db
                     )
                     self.notify_user_of_landing_failure(job)
-                    job.fail_revisions()
-                    db.session.commit()
                     return False
 
             # Get the changeset hash of the first node.
@@ -417,12 +409,11 @@ class LandingWorker(Worker):
                         db=db,
                     )
                     self.notify_user_of_landing_failure(job)
-                    job.fail_revisions()
                 return not try_again
 
-        job.land_revisions()
-        job.transition_status(LandingJobAction.LAND, commit_id=commit_id)
-        db.session.commit()
+        job.transition_status(
+            LandingJobAction.LAND, commit_id=commit_id, commit=True, db=db
+        )
 
         # Extra steps for post-uplift landings.
         if repo.approval_required:
@@ -437,18 +428,6 @@ class LandingWorker(Worker):
                 # The changesets will have gone through even if updating the bugs fails. Notify
                 # the landing user so they are aware and can update the bugs themselves.
                 self.notify_user_of_bug_update_failure(job, e)
-
-        # TODO: fix this query, it is too broad.
-        # We only need to mark revisions that may be affected by this job as stale.
-        stale_revisions = Revision.query.filter(
-            Revision.status != RevisionStatus.LANDED,
-            Revision.repo_name == job.repository_name,
-        )
-        stale_revisions.update({"status": RevisionStatus.STALE})
-        db.session.commit()
-        # Stale comment?
-        # stopped here -- need to add commit to every data update, and figure out
-        # why status enum is not being set correctly.
 
         # Trigger update of repo in Phabricator so patches are closed quicker.
         # Especially useful on low-traffic repositories.
