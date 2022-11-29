@@ -99,7 +99,6 @@ def docker_env_vars(versionfile, monkeypatch):
     monkeypatch.setenv("TRANSPLANT_PASSWORD", "autoland")
     monkeypatch.setenv("PINGBACK_ENABLED", "y")
     monkeypatch.setenv("PINGBACK_HOST_URL", "http://lando-api.test")
-    monkeypatch.setenv("PATCH_BUCKET_NAME", "landoapi.test.bucket")
     monkeypatch.delenv("AWS_ACCESS_KEY", raising=False)
     monkeypatch.delenv("AWS_SECRET_KEY", raising=False)
     monkeypatch.setenv("OIDC_IDENTIFIER", "lando-api")

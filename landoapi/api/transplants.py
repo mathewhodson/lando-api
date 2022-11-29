@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 from datetime import datetime
+from itertools import chain
 import logging
 import urllib.parse
 
@@ -329,7 +330,6 @@ def post(data):
                 Revision.diff_id == diff["id"],
             ).one_or_none()
             if not lando_revision:
-                # Create a new revision, but trigger an error on the landing job.
                 lando_revision = Revision(
                     revision_id=revision["id"], diff_id=diff["id"]
                 )
@@ -440,11 +440,7 @@ def get_list(stack_revision_id):
             type="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
         )
 
-    # Discover all revisions in the stack.
-    stacks = [r.linear_stack for r in revision.linear_stack]
-    stack = set()
-    for s in stacks:
-        stack.update(s)
+    stack = set(chain(*[r.linear_stack for r in revision.linear_stack]))
 
     # revision_ids here is Phabricator revision IDs, since we track the original
     # reference to predecessors in this way.

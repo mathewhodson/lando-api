@@ -93,7 +93,7 @@ def request_sec_approval(data=None):
     return {}, 200
 
 
-def get_stack_hashes(revision_id):
+def get_stack_hashes(revision_id: int) -> tuple:
     """
     Given a revision, returns revision stack hashes.
 

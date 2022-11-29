@@ -182,9 +182,12 @@ class LandingJob(Base):
 
         return q
 
-    def has_non_ready_revisions(self):
-        set(r.status for r in self.get_revisions()).intersection(
-            RevisionStatus.NON_READY_STATES
+    def has_non_ready_revisions(self) -> bool:
+        """Return whether any of the revisions are in a non-ready state or not."""
+        return bool(
+            set(r.status for r in self.get_revisions()).intersection(
+                RevisionStatus.NON_READY_STATES
+            )
         )
 
     def transition_status(self, action, commit=False, db=None, **kwargs):

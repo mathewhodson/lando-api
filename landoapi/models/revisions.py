@@ -88,6 +88,10 @@ class RevisionStatus(enum.Enum):
 
 
 class RevisionLandingJob(db.Model):
+    """
+    Keep track of the many-to-many relationship between landing jobs and revisions.
+    """
+
     landing_job_id = db.Column(db.ForeignKey("landing_job.id"), primary_key=True)
     revision_id = db.Column(db.ForeignKey("revision.id"), primary_key=True)
     index = db.Column(db.Integer, nullable=True)
@@ -97,6 +101,8 @@ class RevisionLandingJob(db.Model):
 
 
 class Revision(Base):
+    """A Lando revision mapping to a Phabricator revision."""
+
     PATCH_DIRECTORY = Path("/patches")
 
     # revision_id and diff_id map to Phabricator IDs (integers).
@@ -110,9 +116,6 @@ class Revision(Base):
     # If a landing is requested, this will be landed after it is in "READY" state.
     landing_requested = db.Column(db.Boolean, nullable=False, default=False)
 
-    # Phabricator build target ID (PHID-HMBT-*).
-    target = db.Column(db.String(254), nullable=False, default="")
-
     status = db.Column(
         db.Enum(RevisionStatus), nullable=False, default=RevisionStatus.NEW
     )
@@ -123,14 +126,18 @@ class Revision(Base):
 
     landing_jobs = db.relationship("RevisionLandingJob", back_populates="revision")
 
+    # A foreign key to another revision representing a predecessor.
     predecessor_id = db.Column(db.Integer, db.ForeignKey("revision.id"), nullable=True)
+
+    # Build a bidirectional relationship based on the predecessor, for convenience.
     predecessor = db.relationship(
         "Revision", back_populates="successor", remote_side="Revision.id", uselist=False
     )
     successor = db.relationship("Revision", uselist=False)
 
     @classmethod
-    def get_from_revision_id(cls, revision_id):
+    def get_from_revision_id(cls, revision_id: int) -> "Revision":
+        """Return a Revision object from a given ID."""
         return cls.query.filter(Revision.revision_id == revision_id).one()
 
     @classmethod
@@ -197,7 +204,13 @@ class Revision(Base):
         """Return a list of all successors and predecessors if linear."""
         return self.get_predecessors(include_landed=True) + self.successors
 
-    def get_patch(self):
+    def get_patch(self) -> str:
+        """
+        Fetch the most up to date patch from Phabricator.
+
+        Fill in placeholder patch data if it is not available.
+        """
+
         from landoapi.hgexports import build_patch_for_revision
         from landoapi.workers.revision_worker import call_conduit
 
@@ -210,7 +223,8 @@ class Revision(Base):
         }
         return build_patch_for_revision(raw_diff, **patch_data)
 
-    def clear_patch_cache(self):
+    def clear_patch_cache(self) -> bool:
+        """Delete the patch cache on disk."""
         if self.patch_cache_path.exists():
             self.patch_cache_path.unlink()
             return True
@@ -254,9 +268,6 @@ class Revision(Base):
             db.session.add(lando_revision)
             db.session.commit()
         return lando_revision
-
-    def has_non_ready_revisions(self):
-        return self.revisions.filter(Revision.status != RevisionStatus.READY).exists()
 
     def change_triggered(self, changes):
         """Check if any of the changes should trigger a status change."""

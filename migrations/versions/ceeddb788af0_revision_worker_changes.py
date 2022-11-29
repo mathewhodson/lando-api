@@ -1,8 +1,8 @@
 """revision worker changes
 
-Revision ID: 874fc36c8810
+Revision ID: ceeddb788af0
 Revises: 7883d80258fb
-Create Date: 2022-11-16 14:09:05.562381
+Create Date: 2022-11-29 19:30:20.431541
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = "874fc36c8810"
+revision = "ceeddb788af0"
 down_revision = "7883d80258fb"
 branch_labels = None
 depends_on = None
@@ -28,7 +28,6 @@ def upgrade():
         sa.Column("repo_name", sa.String(length=254), nullable=False),
         sa.Column("repo_callsign", sa.String(length=254), nullable=False),
         sa.Column("landing_requested", sa.Boolean(), nullable=False),
-        sa.Column("target", sa.String(length=254), nullable=False),
         sa.Column(
             "status",
             sa.Enum(

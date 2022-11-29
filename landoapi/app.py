@@ -9,8 +9,6 @@ from typing import Any
 
 import connexion
 from connexion.resolver import RestyResolver
-from flask_admin import Admin
-from flask_admin.contrib.sqla import ModelView
 
 import landoapi.models  # noqa, makes sure alembic knows about the models.
 
@@ -24,7 +22,7 @@ from landoapi.phabricator import phabricator_subsystem
 from landoapi.repos import repo_clone_subsystem
 from landoapi.sentry import sentry_subsystem
 from landoapi.smtp import smtp_subsystem
-from landoapi.storage import db, db_subsystem
+from landoapi.storage import db_subsystem
 from landoapi.systems import Subsystem
 from landoapi.treestatus import treestatus_subsystem
 from landoapi.ui import lando_ui_subsystem
@@ -55,7 +53,6 @@ def load_config() -> dict[str, Any]:
         "ALEMBIC": {"script_location": "/migrations/"},
         "DISABLE_CELERY": bool(os.getenv("DISABLE_CELERY")),
         "ENVIRONMENT": os.getenv("ENV"),
-        "FLASK_ADMIN_SWATCH": "journal",
         "MAIL_SUPPRESS_SEND": bool(os.getenv("MAIL_SUPPRESS_SEND")),
         "MAIL_USE_SSL": bool(os.getenv("MAIL_USE_SSL")),
         "MAIL_USE_TLS": bool(os.getenv("MAIL_USE_TLS")),
@@ -86,15 +83,12 @@ def load_config() -> dict[str, Any]:
         "MAIL_USERNAME",
         "OIDC_DOMAIN",
         "OIDC_IDENTIFIER",
-        "PATCH_BUCKET_NAME",
         "PHABRICATOR_ADMIN_API_KEY",
         "PHABRICATOR_UNPRIVILEGED_API_KEY",
         "PHABRICATOR_URL",
         "PINGBACK_ENABLED",
         "REPOS_TO_LAND",
         "REPO_CLONES_PATH",
-        "REVISION_WORKER_IS_MAIN",
-        "S3_ENDPOINT_URL",
         "SENTRY_DSN",
         "TRANSPLANT_API_KEY",
         "TRANSPLANT_PASSWORD",
@@ -110,20 +104,15 @@ def load_config() -> dict[str, Any]:
         "PINGBACK_ENABLED": "n",
         "REPO_CLONES_PATH": "/repos",
         "TREESTATUS_URL": "https://treestatus.mozilla-releng.net",
-        "REVISION_WORKER_IS_MAIN": "0",
     }
 
     for key in config_keys:
         config[key] = os.getenv(key, defaults.get(key))
 
-    config["REVISION_WORKER_IS_MAIN"] = int(config["REVISION_WORKER_IS_MAIN"])
-
     return config
 
 
 def construct_app(config: dict[str, Any]) -> connexion.App:
-    # from werkzeug.middleware.profiler import ProfilerMiddleware
-
     app = connexion.App(__name__, specification_dir="spec/")
 
     app.add_api(
@@ -135,8 +124,5 @@ def construct_app(config: dict[str, Any]) -> connexion.App:
     flask_app.config.update(config)
     flask_app.register_blueprint(dockerflow)
     initialize_hooks(flask_app)
-    admin = Admin(flask_app, name="Lando", template_mode="bootstrap4")
-    admin.add_view(ModelView(landoapi.models.revisions.Revision, db.session))
-    # flask_app.wsgi_app = ProfilerMiddleware(flask_app.wsgi_app)
 
     return app
