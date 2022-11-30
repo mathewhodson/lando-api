@@ -291,11 +291,9 @@ class LandingWorker(Worker):
                         commit=True,
                         db=db,
                     )
+                    revision.clear_patch_cache()
                     self.notify_user_of_landing_failure(job)
                     job.fail_revisions()
-                    # TODO makes sure that repos that do not use
-                    # revision worker will force-update patch on
-                    # next request.
                     return True
                 patch_bufs.append((revision, patch))
 

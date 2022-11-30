@@ -9,14 +9,13 @@ from pathlib import Path
 from itertools import chain
 
 import networkx as nx
-from flask import current_app
 from mots.config import FileConfig
 from mots.directory import Directory, QueryResult
 
 from landoapi.hg import HgRepo
 from landoapi.models.revisions import Revision
 from landoapi.models.revisions import RevisionStatus as RS
-from landoapi.phabricator import PhabricatorAPIException, PhabricatorClient
+from landoapi.phabricator import get_conduit_data
 from landoapi.repos import repo_clone_subsystem
 from landoapi.storage import db, _lock_table_for
 from landoapi.workers import RevisionWorker
@@ -36,42 +35,8 @@ class StackGraph(nx.DiGraph):
         return self.nodes
 
 
-def get_phab_client():
-    phab = PhabricatorClient(
-        current_app.config["PHABRICATOR_URL"],
-        current_app.config["PHABRICATOR_UNPRIVILEGED_API_KEY"],
-    )
-    return phab
-
-
-def call_conduit(method, **kwargs):
-    """Send data to conduit API."""
-    phab = get_phab_client()
-    try:
-        result = phab.call_conduit(method, **kwargs)
-    except PhabricatorAPIException as e:
-        logger.error(e)
-        # TODO: raise or return error here.
-        return
-    return result
-
-
-def get_conduit_data(method, **kwargs):
-    """Fetch result from conduit API request."""
-    data = []
-    result = call_conduit(method, **kwargs)
-    if not result:
-        return data
-
-    data += result["data"]
-    while result and result["cursor"] and result["cursor"]["after"]:
-        result = call_conduit(method, after=result["cursor"]["after"], **kwargs)
-        if result and "data" in result:
-            data += result["data"]
-    return data
-
-
-def get_active_repos(repo_config):
+def get_active_repos(repo_config: dict) -> list[str]:
+    """Query Phabricator to determine PHIDs of active repos."""
     repos = [repo for repo in repo_config if repo.use_revision_worker]
     repo_phids = get_conduit_data(
         "diffusion.repository.search",
@@ -80,7 +45,7 @@ def get_active_repos(repo_config):
     return [r["phid"] for r in repo_phids]
 
 
-def get_stacks(revisions):
+def get_stacks(revisions: dict[str, dict]) -> list:
     """Returns a stack with revision PHIDs as nodes.
 
     This method fetches unique stacks from a list of stack graphs. This
@@ -99,7 +64,7 @@ def get_stacks(revisions):
     return filtered
 
 
-def get_phab_revisions(statuses=None):
+def get_phab_revisions(statuses: list[str] | None = None) -> dict[int, dict]:
     """Get a list of revisions of given statuses."""
     statuses = statuses or [
         "draft",
@@ -131,7 +96,7 @@ def get_phab_revisions(statuses=None):
     # Ensure that all revisions in each stack are in our revisions list.
     input_revisions = set(chain(*[stack.revisions for stack in stacks]))
     missing_keys = input_revisions.difference(revisions.keys())
-    # TODO: TEST THIS
+
     if missing_keys:
         stragglers = get_conduit_data(
             "differential.revision.search",
@@ -198,23 +163,22 @@ def get_phab_revisions(statuses=None):
     return revs
 
 
-def parse_diff(diff):
+def parse_diff(diff: str) -> set[str]:
     """Given a diff, extract list of affected files."""
     diff_lines = diff.splitlines()
     file_diffs = [
         line.split(" ")[2:] for line in diff_lines if line.strip().startswith("diff")
     ]
-    file_paths = []
+    file_paths = set()
     for file_diff in file_diffs:
         # Parse source/destination paths.
         path1, path2 = file_diff
-        file_paths.append("/".join(path1.split("/")[1:]))
-        file_paths.append("/".join(path2.split("/")[1:]))
-    file_paths = set(file_paths)
+        file_paths.add("/".join(path1.split("/")[1:]))
+        file_paths.add("/".join(path2.split("/")[1:]))
     return file_paths
 
 
-def discover_revisions():
+def discover_revisions() -> None:
     """Check and update local database with available revisions."""
     phab_revisions = get_phab_revisions()
 
@@ -269,7 +233,7 @@ def discover_revisions():
     db.session.commit()
 
 
-def mark_stale_revisions():
+def mark_stale_revisions() -> None:
     """Discover any upstream changes, and mark revisions affected as stale."""
     repos = Revision.query.with_entities(Revision.repo_name).distinct().all()
     repos = tuple(repo[0] for repo in repos if repo[0])
@@ -335,8 +299,6 @@ class Processor(RevisionWorker):
             db.session.commit()
 
         revisions = Revision.query.filter(Revision.id.in_(picked_up))
-
-        db.session.commit()
 
         # NOTE: The revisions will be processed according to their dependencies
         # at the time of fetching. If dependencies change, they will be

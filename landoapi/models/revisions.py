@@ -212,7 +212,7 @@ class Revision(Base):
         """
 
         from landoapi.hgexports import build_patch_for_revision
-        from landoapi.workers.revision_worker import call_conduit
+        from landoapi.phabricator import call_conduit
 
         raw_diff = call_conduit("differential.getrawdiff", diffID=self.diff_id)
         patch_data = self.patch_data or {
