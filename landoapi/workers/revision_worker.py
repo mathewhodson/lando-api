@@ -10,7 +10,7 @@ from itertools import chain
 
 import networkx as nx
 from flask import current_app
-from mots.config import FileConfig, validate
+from mots.config import FileConfig
 from mots.directory import Directory, QueryResult
 
 from landoapi.hg import HgRepo
@@ -340,18 +340,20 @@ class Processor(RevisionWorker):
 
         # NOTE: The revisions will be processed according to their dependencies
         # at the time of fetching. If dependencies change, they will be
-        # re-processed on the next iteration.
+        # re-processed on the next iteration. This has the effect of processing
+        # revisions as they become available, if, for example, a large stack is
+        # being uploaded.
 
         logger.info(f"Found {revisions.all()} to process.")
         for revision in revisions:
-            warnings, errors = [], []
+            errors = []
             logger.info(f"Running checks on revision {revision}")
 
             revision.status = RS.CHECKING
             db.session.commit()
 
             try:
-                warnings, errors = self.process(revision)
+                errors = self.process(revision)
             except Exception as e:
                 logger.info(f"Exception encountered while processing {revision}")
                 revision.status = RS.PROBLEM
@@ -369,59 +371,47 @@ class Processor(RevisionWorker):
                 logger.info(f"No problems detected on revision {revision}")
             db.session.commit()
 
-    def _mots_validate(self, mots_directory, query_result):
-        warnings = []
-        errors = []
-        # This is to check if the config file has been modified...
+    def _mots_validate(self, mots_directory, query_result) -> list:
+        """Run `mots check-hashes` to ensure both mots.yaml and export are updated."""
+
+        # First check if the config file is part of the patch.
         if mots_directory.config_handle.path.name in query_result.paths:
-            # mots config file is being modified, clean and validate.
+            # mots config file has been modified, check hashes for consistency.
             try:
                 mots_directory.reset_config()
                 mots_directory.load()
                 mots_directory.config_handle.load()
                 errors = mots_directory.config_handle.check_hashes() or []
-                warnings = (
-                    validate(
-                        mots_directory.config_handle.config, mots_directory.repo_path
-                    )
-                    or []
-                )
             except Exception as e:
-                errors.append(e)
+                errors = [e]
                 logger.exception(e)
-        return warnings, errors
+        return errors
 
-    def _get_mots_directory(self, path: str):
+    def _get_mots_directory(self, path: str) -> Directory | None:
+        """Try and fetch a mots.yaml file and load a directory with it."""
         try:
             return Directory(FileConfig(Path(path) / "mots.yaml"))
         except FileNotFoundError:
+            # Repo does not use a mots.yaml file.
             logger.debug(f"No mots.yaml found at {path}")
         except Exception as e:
+            # Fail gracefully and behave as though there is no mots directory.
             logger.exception(e)
 
-    def _mots_query(
-        self,
-        revision: Revision,
-        hgrepo: HgRepo,
-        mots_directory: Directory,
-    ):
-        paths = parse_diff(revision.patch)
-        return mots_directory.query(*paths)
-
-    def _process_patch(self, revision: Revision, hgrepo: HgRepo):
+    def _process_patch(self, revision: Revision, hgrepo: HgRepo) -> list[str]:
         """Run through all predecessors before applying revision patch."""
         errors = []
         for r in revision.predecessors + [revision]:
             try:
                 hgrepo.apply_patch(io.BytesIO(r.patch.encode("utf-8")))
             except Exception as e:
-                # Something is wrong (e.g. merge conflict). Log and break.
+                # Something is wrong (e.g., merge conflict). Log and break.
                 logger.error(e)
                 errors.append(f"Problem detected in {r} ({e})")
                 break
         return errors
 
-    def _get_repo_objects(self, repo_name: str):
+    def _get_repo_objects(self, repo_name: str) -> tuple[HgRepo, str]:
         """Given a repo name, return the hg repo object and pull path."""
         repo = repo_clone_subsystem.repos[repo_name]
         hgrepo = HgRepo(
@@ -430,10 +420,10 @@ class Processor(RevisionWorker):
         )
         return hgrepo, repo.pull_path
 
-    def process(self, revision: Revision):
-        """Run mots query checks and return any errors or warnings."""
+    def process(self, revision: Revision) -> list[str]:
+        """Run mots query checks and return any errors."""
         # Initialize some variables that will be updated along the process.
-        warnings, errors, mots_query = list(), list(), QueryResult()
+        errors, mots_query = list(), QueryResult()
 
         hgrepo, pull_path = self._get_repo_objects(revision.repo_name)
 
@@ -446,26 +436,20 @@ class Processor(RevisionWorker):
 
             if directory:
                 directory.load()
-                mots_query += self._mots_query(revision, hgrepo, directory)
+                paths = parse_diff(revision.patch)
+                mots_query += directory.query(*paths)
 
-            # Try to merge the revision patch.
+            # Try to merge the revision patch and its predecessors.
             errors = self._process_patch(revision, hgrepo)
             if errors:
-                return warnings, errors
+                return errors
 
             # Perform additional mots query after patch is applied.
             if directory:
-                directory.load(full_paths=True)
-            else:
-                # Try getting directory again, in case mots was introduced in this
-                # patch.
-                directory = self._get_mots_directory(hgrepo.path)
+                directory.load()
+                paths = parse_diff(revision.patch)
+                mots_query += directory.query(*paths)
 
-            if directory:
-                # Merge previous query result with this one if needed.
-                mots_query += self._mots_query(revision, hgrepo, directory)
-
-            if mots_query:
                 revision.update_data(
                     **{
                         "mots": {
@@ -478,12 +462,7 @@ class Processor(RevisionWorker):
                     }
                 )
 
-                if directory:
-                    # Perform validation using directory and full query result.
-                    _warnings, _errors = self._mots_validate(directory, mots_query)
-
-                    # Update warnings and errors with any additional ones.
-                    warnings += _warnings
-                    errors += _errors
+                # Perform mots checks.
+                errors += self._mots_validate(directory, mots_query)
             db.session.commit()
-            return warnings, errors
+            return errors
