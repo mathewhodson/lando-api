@@ -147,20 +147,17 @@ def get_phab_revisions(statuses: list[str] | None = None) -> dict[int, dict]:
 
     for r in revisions:
         r.update(repo_map[r["repo_phid"]])
-        r["phids"] = {
-            "repo_phid": r["repo_phid"],
-            "diff_phid": r["diff_phid"],
-            "revision_phid": r["phid"],
-        }
 
-        del r["diff_phid"]
-        del r["repo_phid"]
-        del r["phid"]
+        # Move PHIDs to their own key
+        r["phids"] = {
+            "repo_phid": r.pop("repo_phid"),
+            "diff_phid": r.pop("diff_phid"),
+            "revision_phid": r.pop("phid"),
+        }
 
     logger.debug(f"Found {len(revisions)} revisions from Phabricator API")
 
-    revs = {r["revision_id"]: r for r in revisions}
-    return revs
+    return {r["revision_id"]: r for r in revisions}
 
 
 def parse_diff(diff: str) -> set[str]:
