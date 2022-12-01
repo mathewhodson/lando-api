@@ -197,7 +197,7 @@ def discover_revisions() -> None:
             lando_revision = Revision(revision_id=revision_id, diff_id=diff_id)
             db.session.add(lando_revision)
 
-        if lando_revision.change_triggered(phab_revision):
+        if lando_revision.change_triggered(phab_revision) or new:
             logger.info(f"Change detected in {lando_revision}.")
             # Update all matching fields in the revision with remote data.
             for key, value in phab_revision.items():
@@ -212,7 +212,8 @@ def discover_revisions() -> None:
             if lando_revision.successors and not new:
                 for successor in lando_revision.successors:
                     successor.status = RS.STALE
-        db.session.commit()
+                db.session.commit()
+                logger.info(f"{lando_revision} saved to database.")
 
     # Resolve dependency chain.
     for revision in dependency_queue:
