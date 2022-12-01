@@ -19,7 +19,9 @@ import logging
 
 from sqlalchemy.dialects.postgresql.json import JSONB
 
+from landoapi.hgexports import build_patch_for_revision
 from landoapi.models.base import Base
+from landoapi.phabricator import call_conduit
 from landoapi.storage import db
 
 logger = logging.getLogger(__name__)
@@ -210,10 +212,6 @@ class Revision(Base):
 
         Fill in placeholder patch data if it is not available.
         """
-
-        from landoapi.hgexports import build_patch_for_revision
-        from landoapi.phabricator import call_conduit
-
         raw_diff = call_conduit("differential.getrawdiff", diffID=self.diff_id)
         patch_data = self.patch_data or {
             "author_name": "",

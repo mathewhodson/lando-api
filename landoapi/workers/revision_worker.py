@@ -212,7 +212,7 @@ def discover_revisions() -> None:
             if lando_revision.successors and not new:
                 for successor in lando_revision.successors:
                     successor.status = RS.STALE
-    db.session.commit()
+        db.session.commit()
 
     # Resolve dependency chain.
     for revision in dependency_queue:
