@@ -301,7 +301,9 @@ class LandingWorker(Worker):
                 try:
                     hgrepo.apply_patch(BytesIO(patch))
                 except PatchConflict as exc:
-                    breakdown = self.process_merge_conflict(exc, repo, hgrepo, revision)
+                    breakdown = self.process_merge_conflict(
+                        exc, repo, hgrepo, revision.revision_id
+                    )
                     message = (
                         f"Problem while applying patch in revision {revision.revision_id}:\n\n"
                         f"{str(exc)}"

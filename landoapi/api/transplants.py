@@ -7,10 +7,11 @@ import logging
 import urllib.parse
 
 import kombu
-from connexion import problem, ProblemException
+from connexion import ProblemException
 from flask import current_app, g
 
 from landoapi import auth
+from landoapi.api.stacks import not_found_problem
 from landoapi.commit_message import format_commit_message
 from landoapi.decorators import require_phabricator_api_key
 from landoapi.hgexports import build_patch_for_revision
@@ -428,17 +429,20 @@ def post(data):
 def get_list(stack_revision_id):
     """Return a list of Transplant objects"""
     revision_id = revision_id_to_int(stack_revision_id)
+
+    # We do this check here as a permissions check. We don't need the actual data.
+    phab = g.phabricator
+    revision = phab.call_conduit(
+        "differential.revision.search", constraints={"ids": [revision_id]}
+    )
+    revision = phab.single(revision, "data", none_when_empty=True)
+    if revision is None:
+        return not_found_problem
+
     revision = Revision.query.filter(Revision.revision_id == revision_id).one_or_none()
 
-    if revision is None:
-        # TODO: Try again with Phabricator perhaps, or update the message to include
-        # a blurb about the revisions not having been picked up yet from Phabricator.
-        return problem(
-            404,
-            "Revision not found",
-            "The revision does not exist or you lack permission to see it.",
-            type="https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-        )
+    if not revision:
+        return []
 
     stack = set(chain(*[r.linear_stack for r in revision.linear_stack]))
 
