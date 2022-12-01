@@ -40,7 +40,7 @@ from landoapi.treestatus import (
 from landoapi.uplift import (
     update_bugs_for_uplift,
 )
-from landoapi.workers import Worker
+from landoapi.workers.base import Worker
 
 logger = logging.getLogger(__name__)
 

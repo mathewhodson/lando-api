@@ -18,7 +18,7 @@ from landoapi.models.revisions import RevisionStatus as RS
 from landoapi.phabricator import get_conduit_data
 from landoapi.repos import repo_clone_subsystem
 from landoapi.storage import db, _lock_table_for
-from landoapi.workers import RevisionWorker
+from landoapi.workers.base import RevisionWorker
 
 logger = logging.getLogger(__name__)
 
